@@ -1,0 +1,9 @@
+.memorybox-config.php
+.mb-backups/
+.mb-update-state.php
+.mb-update-lock.php
+mb-update.php
+.install.lock
+install-key.php
+hf-bootstrap.php
+*.zip

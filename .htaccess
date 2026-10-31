@@ -1,0 +1,5 @@
+DirectoryIndex index.php
+Options -Indexes
+<FilesMatch "^(lib\.php|install-key\.php|hf-bootstrap\.php|\.memorybox-config\.php|\.install\.lock)$">
+ Require all denied
+</FilesMatch>

@@ -1,0 +1,17 @@
+{
+  "name": "Переодевашка — мастерская Memorybox",
+  "short_name": "Переодевашка",
+  "description": "Бумажная кукла по фото ребёнка, примерочная и листы для печати",
+  "lang": "ru",
+  "start_url": "./index.php?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fbf3ea",
+  "theme_color": "#6b2d5c",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
