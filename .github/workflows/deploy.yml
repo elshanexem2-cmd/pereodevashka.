@@ -1,0 +1,23 @@
+name: Deploy to hosting
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency: deploy
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y -qq lftp
+      - name: Upload changed files (never deletes anything on the server)
+        env:
+          H: ${{ secrets.FTP_HOST }}
+          U: ${{ secrets.FTP_USER }}
+          P: ${{ secrets.FTP_PASS }}
+        run: |
+          lftp -u "$U,$P" "$H" -e "set ftp:ssl-allow no; set net:max-retries 3; \
+            mirror -R --only-newer --ignore-time --verbose \
+              -x '^\.git' -x '^\.github/' -x '^README\.md$' \
+              -x '^\.memorybox-config\.php$' -x '^\.mb-' -x '^mb-update\.php$' -x '^\.install\.lock$' \
+              ./ ./; bye"
