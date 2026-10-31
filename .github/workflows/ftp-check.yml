@@ -1,0 +1,19 @@
+name: FTP check
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/ftp-check.yml']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: List FTP folders
+        env:
+          H: ${{ secrets.FTP_HOST }}
+          U: ${{ secrets.FTP_USER }}
+          P: ${{ secrets.FTP_PASS }}
+        run: |
+          echo "host set: ${H:+yes} user set: ${U:+yes} pass set: ${P:+yes}"
+          for d in "" "www/" "www/memorybox.by/"; do
+            echo "== /$d"; curl -sS --max-time 30 --user "$U:$P" "ftp://$H/$d" --list-only || true
+          done
