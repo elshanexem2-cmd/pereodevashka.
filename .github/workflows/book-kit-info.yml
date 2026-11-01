@@ -10,6 +10,8 @@ jobs:
           U: ${{ secrets.FTP_USER }}
           P: ${{ secrets.FTP_PASS }}
         run: |
+          echo "== FTP home"; curl -sS --max-time 30 --user "$U:$P" "ftp://$H/" -X "LIST -a" | sed 's/.* //' | sed 's/memorybox/MB/g'
+          for d in $(curl -sS --max-time 30 --user "$U:$P" "ftp://$H/" --list-only | grep -v '^\.'); do echo "== $d" | sed 's/memorybox/MB/g'; curl -sS --max-time 30 --user "$U:$P" "ftp://$H/$d/" --list-only 2>/dev/null | head -8; done
           PRIV=$(curl -sS --max-time 30 --user "$U:$P" "ftp://$H/" --list-only | grep '^memorybox-private-' | head -1)
           [ -n "$PRIV" ] || { echo "Private folder not visible: set FTP home to /www"; exit 1; }
           curl -sS --max-time 120 --user "$U:$P" "ftp://$H/$PRIV/books/cat-cafe.php" -o book.php
