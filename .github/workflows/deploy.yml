@@ -1,7 +1,6 @@
 name: Deploy to hosting
+# Manual only: nothing goes to the server without the owner's go-ahead.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 concurrency: deploy
 jobs:
