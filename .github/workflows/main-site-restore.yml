@@ -8,7 +8,7 @@ jobs:
     steps:
       - name: Download backup archive and list it (nothing is uploaded)
         run: |
-          curl -sSL -o backup.zip "https://drive.usercontent.google.com/download?id=1kp3gE5ms_mTChXQFW8CzpnE2jXV3vD2G&export=download&confirm=t"
-          ls -l backup.zip; file backup.zip
-          unzip -l backup.zip | grep -v '/pereodevashka/' | grep -vE '\.(jpg|jpeg|png|webp|gif|svg|mp4)$' | head -80
-          echo "== index.html files:"; unzip -l backup.zip | grep -i 'index\.html' 
+          curl -sSL -o backup.tgz "https://drive.usercontent.google.com/download?id=1kp3gE5ms_mTChXQFW8CzpnE2jXV3vD2G&export=download&confirm=t"
+          tar -tzvf backup.tgz > list.txt
+          echo "== index.html files:"; grep -i 'index\.html' list.txt | grep -v '/pereodevashka/'
+          echo "== top of main site:"; grep -vE '/pereodevashka/|/(img|media)/' list.txt | grep -i 'memorybox.by' | head -40
