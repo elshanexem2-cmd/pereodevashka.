@@ -1,14 +1,19 @@
-name: Main site index.html - inspect backup
+name: Main site - restore index.html from backup
 on:
   push:
     paths: ['.github/workflows/main-site-restore.yml']
 jobs:
-  inspect:
+  restore:
     runs-on: ubuntu-latest
     steps:
-      - name: Download backup archive and list it (nothing is uploaded)
+      - run: sudo apt-get install -y -qq lftp
+      - name: Put back only memorybox.by/index.html from the owner's backup
+        env:
+          H: ${{ secrets.FTP_HOST }}
+          U: ${{ secrets.FTP_USER }}
+          P: ${{ secrets.FTP_PASS }}
         run: |
           curl -sSL -o backup.tgz "https://drive.usercontent.google.com/download?id=1kp3gE5ms_mTChXQFW8CzpnE2jXV3vD2G&export=download&confirm=t"
-          tar -tzvf backup.tgz > list.txt
-          echo "== index.html files:"; grep -i 'index\.html' list.txt | grep -v '/pereodevashka/'
-          echo "== top of main site:"; grep -vE '/pereodevashka/|/(img|media)/' list.txt | grep -i 'memorybox.by' | head -40
+          tar -xzf backup.tgz data/www/memorybox.by/index.html
+          [ "$(stat -c %s data/www/memorybox.by/index.html)" = "101714" ] || { echo "unexpected file"; exit 1; }
+          lftp -u "$U,$P" "$H" -e "set ftp:ssl-allow no; cd memorybox.by || exit 1; put data/www/memorybox.by/index.html -o index.html; cls -l index.html; bye"
