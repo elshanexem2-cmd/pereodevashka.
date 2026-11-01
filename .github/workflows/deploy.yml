@@ -16,8 +16,11 @@ jobs:
           U: ${{ secrets.FTP_USER }}
           P: ${{ secrets.FTP_PASS }}
         run: |
+          # FTP home may be the site folder itself or /www above it: find where index.php lives.
+          if curl -sS --max-time 30 --user "$U:$P" "ftp://$H/" --list-only | grep -qx 'index.php'; then DIR=./; else DIR=memorybox.by/; fi
+          echo "Deploying into: $DIR"
           lftp -u "$U,$P" "$H" -e "set ftp:ssl-allow no; set net:max-retries 3; \
             mirror -R --only-newer --ignore-time --verbose \
               -x '^\.git' -x '^\.github/' -x '^README\.md$' \
               -x '^\.memorybox-config\.php$' -x '^\.mb-' -x '^mb-update\.php$' -x '^\.install\.lock$' \
-              ./ ./; bye"
+              ./ $DIR; bye"

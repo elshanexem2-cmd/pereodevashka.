@@ -1,0 +1,26 @@
+name: Book kit info (names and sizes only)
+on: workflow_dispatch
+jobs:
+  info:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read Кото-кафе piece list
+        env:
+          H: ${{ secrets.FTP_HOST }}
+          U: ${{ secrets.FTP_USER }}
+          P: ${{ secrets.FTP_PASS }}
+        run: |
+          PRIV=$(curl -sS --max-time 30 --user "$U:$P" "ftp://$H/" --list-only | grep '^memorybox-private-' | head -1)
+          [ -n "$PRIV" ] || { echo "Private folder not visible: set FTP home to /www"; exit 1; }
+          curl -sS --max-time 120 --user "$U:$P" "ftp://$H/$PRIV/books/cat-cafe.php" -o book.php
+          python3 - <<'PY'
+          import json
+          raw=open('book.php','rb').read().decode('utf-8'); raw=raw[raw.index('?>')+3:]
+          s=json.loads(raw)['snapshot']
+          print('dollMM', s.get('settings',{}).get('dollMM'))
+          for i,p in enumerate(s['pieces']):
+              print(i, p.get('role'), repr(p.get('name')), round(p.get('wmm',0),1), 'x', round(p.get('hmm',0),1), 'mm')
+          lay=s.get('bookLayout') or {}
+          for n,pg in enumerate(lay.get('pages',[])): print('page',n,[it.get('index') for it in pg])
+          PY
+          rm -f book.php
