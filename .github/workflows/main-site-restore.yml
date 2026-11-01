@@ -1,21 +1,18 @@
-name: Main site - compare root with backup (read only)
+name: Main site - remove the 16 studio files wrongly uploaded into root
 on:
   push:
     paths: ['.github/workflows/main-site-restore.yml']
 jobs:
-  compare:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Root files in backup vs on server now
+      - run: sudo apt-get install -y -qq lftp
+      - name: Remove exactly the 16 extra items (confirmed by owner), nothing else
         env:
           H: ${{ secrets.FTP_HOST }}
           U: ${{ secrets.FTP_USER }}
           P: ${{ secrets.FTP_PASS }}
         run: |
-          curl -sSL -o backup.tgz "https://drive.usercontent.google.com/download?id=1kp3gE5ms_mTChXQFW8CzpnE2jXV3vD2G&export=download&confirm=t"
-          tar -tzf backup.tgz | grep -E '^data/www/memorybox\.by/[^/]+/?$' | sed 's#^data/www/memorybox\.by/##; s#/$##' | sort -u > before.txt
-          curl -sS --user "$U:$P" "ftp://$H/memorybox.by/" -X "LIST -a" | awk '{print $NF}' | grep -vx '\.\|\.\.' | sort -u > now.txt
-          echo "== in backup (before):"; cat before.txt | sed 's/memorybox/MB/g'
-          echo "== on server now but NOT in backup:"; comm -13 before.txt now.txt | sed 's/memorybox/MB/g'
-          echo "== was in backup, missing now:"; comm -23 before.txt now.txt | sed 's/memorybox/MB/g'
-          tar -xzf backup.tgz data/www/memorybox.by/.htaccess 2>/dev/null && { echo "== backup .htaccess:"; cat data/www/memorybox.by/.htaccess; } || echo "== no .htaccess in backup"
+          lftp -u "$U,$P" "$H" -e "set ftp:ssl-allow no; cd memorybox.by || exit 1; \
+            rm -f .htaccess index.php api.php lib.php tg.php login.php setup.php sw.js manifest.webmanifest apple-touch-icon.png icon-192.png icon-512.png icon-maskable-512.png; \
+            rm -rf books guide landing; echo '== root now:'; cls -a; bye"
