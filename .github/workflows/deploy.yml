@@ -16,8 +16,13 @@ jobs:
           U: ${{ secrets.FTP_USER }}
           P: ${{ secrets.FTP_PASS }}
         run: |
-          # FTP home may be the site folder itself or /www above it: find where index.php lives.
-          if curl -sS --max-time 30 --user "$U:$P" "ftp://$H/" --list-only | grep -qx 'index.php'; then DIR=./; else DIR=memorybox.by/; fi
+          # The studio lives in memorybox.by/pereodevashka/ (next to the main memorybox.by site). Find it from whatever FTP home is set,
+          # and refuse to deploy anywhere else so the main site is never touched.
+          ls1() { curl -sS --max-time 30 --user "$U:$P" "ftp://$H/$1" --list-only; }
+          if ls1 "memorybox.by/pereodevashka/" | grep -qx 'tg.php'; then DIR=memorybox.by/pereodevashka/
+          elif ls1 "pereodevashka/" | grep -qx 'tg.php'; then DIR=pereodevashka/
+          elif ls1 "" | grep -qx 'tg.php' && ! ls1 "" | grep -qx 'pereodevashka'; then DIR=./
+          else echo "Studio folder not found - nothing deployed"; exit 1; fi
           echo "Deploying into: $DIR"
           lftp -u "$U,$P" "$H" -e "set ftp:ssl-allow no; set net:max-retries 3; \
             mirror -R --only-newer --ignore-time --verbose \
