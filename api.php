@@ -34,7 +34,7 @@ try {
  }
  if($action==='session') { $u=null;$generation=null;$expired=false;if(!empty($_SESSION['uid'])){$r=record_read($c['private_dir'].'/users/'.$_SESSION['uid'].'.php');if($r){if(access_state($r)['active']&&!session_replaced($r)){$u=user_public($r);$generation=generation_status($c['private_dir'].'/accounts/'.$r['id'],$r);}else $expired=!access_state($r)['active'];}}reply(['user'=>$u,'expired'=>$expired,'bot'=>$c['tg_bot']??null,'csrf'=>$_SESSION['csrf'],'generation'=>$generation,'hfReady'=>(!empty($c['hf_token'])&&function_exists('curl_init'))||modal_ready($c),'modalReady'=>modal_ready($c)]); }
  if($_SERVER['REQUEST_METHOD']==='POST')csrf();
- elseif(!in_array($action,['img','projects','project','versions','hf.result','hf.image','hf.latest','hf.project','img.batch','child.ready','book.reference','book.layout','books','book.production','book.production.image','book.kit','library','library.piece'],true))fail(405,'Метод не поддерживается.');
+ elseif(!in_array($action,['img','projects','project','versions','hf.result','hf.image','hf.latest','hf.project','img.batch','child.ready','book.reference','books','book.production','book.production.image','book.kit','library','library.piece'],true))fail(405,'Метод не поддерживается.');
  if($action==='login') { $b=input();throttle($c);$login=strtolower(trim((string)($b['login']??'')));$idx=record_read($c['private_dir'].'/users.php',[]);$u=isset($idx[$login])?record_read($c['private_dir'].'/users/'.$idx[$login].'.php'):null;
  $hash=$u['hash']??'$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi';$pw=(string)($b['password']??'');$valid=strlen($pw)<=200&&password_verify($pw,$hash);
  if(!$u||!$valid)fail(401,'Неверный логин или пароль.');if(empty($u['admin'])&&!empty($u['plan']))fail(403,'Для этого аккаунта вход только по ключу из Telegram-бота.');throttle($c,true);session_regenerate_id(true);$_SESSION['uid']=$u['id'];$_SESSION['sid']=login_register($c,$u);login_notify($c,$u);$_SESSION['csrf']=bin2hex(random_bytes(24));reply(['user'=>user_public($u),'csrf'=>$_SESSION['csrf']]); }
@@ -279,18 +279,7 @@ try {
   if(strpos(json_encode($book['snapshot'],JSON_UNESCAPED_SLASHES),'data:image/png')!==false)$book=locked($c['private_dir'].'/books.lock',function()use($c,$path){$book=record_read($path);$book['snapshot']=externalize_snapshot($c,$book['snapshot']);record_write($path,$book);return $book;});
   $s=$book['snapshot'];$pieces=[];
   foreach($s['pieces'] as $p){if(!is_array($p)||($p['role']??null)==='doll'||(($p['role']??null)!=='item'&&preg_match('/^kukla(?:_|$)/i',(string)($p['name']??''))))continue;$p['role']='item';unset($p['fit']);$pieces[]=$p;}
-  reply(['pieces'=>$pieces,'dollMM'=>(float)($s['settings']['dollMM']??160)?:160,'layout'=>record_read($c['private_dir'].'/books/'.$id.'-layout.php',null)]);
- }
- // The owner places the book's own pieces once: which scene each one belongs to (it is printed under that scene, like the
- // Canva layout: nails under the hand, tables under the café) and the size of all of them against the 21 cm scene.
- if($action==='book.layout'){$id=(string)($_GET['id']??'');if($id!=='cat-cafe')reply(['layout'=>null]);reply(['layout'=>record_read($c['private_dir'].'/books/'.$id.'-layout.php',null)]);}
- if($action==='book.layout.save'){
-  if(empty($u['admin']))fail(403,'Только владелец.');$b=input();$id=(string)($b['id']??'');if($id!=='cat-cafe')fail(400,'Неизвестная книга.');
-  $scale=(float)($b['scale']??0);if($scale<0.3||$scale>1.5)fail(400,'Масштаб деталей: от 0,3 до 1,5.');
-  $scenes=$b['scenes']??[];if(!is_array($scenes)||count($scenes)>500)fail(400,'Неверный список деталей.');$out=[];
-  foreach($scenes as $name=>$scene){if(!is_string($name)||strlen($name)>120||!is_int($scene)||$scene<0||$scene>7)fail(400,'Неверная сцена у детали.');$out[$name]=$scene;}
-  locked($c['private_dir'].'/books.lock',function()use($c,$id,$scale,$out){record_write($c['private_dir'].'/books/'.$id.'-layout.php',['scale'=>$scale,'scenes'=>$out,'savedAt'=>gmdate('c')]);});
-  reply(['ok'=>true]);
+  reply(['pieces'=>$pieces,'dollMM'=>(float)($s['settings']['dollMM']??160)?:160]);
  }
  // Clothes library: its own store (library-items.php), separate from projects. The owner adds sheets of cut-out items, sorts them
  // and removes them; the fitting room shows what is there. Never a doll (a doll carries a child's face). The owner can hide entries.
