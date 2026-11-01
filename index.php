@@ -2253,13 +2253,13 @@ html.own-open{overflow:hidden}
   // Pages for scissors: with a book, each page holds one book page (half a spread, ~21 cm wide, in the top-left corner; on A4 the full
   // width) and around it as many pieces as fit, biggest first, so the master laminates and cuts one sheet instead of a background sheet
   // plus a pieces sheet. Pieces left over go on sheets of pieces only, packed tight (scissors need no plotter margins).
-  function packPieces(pieces, W, H, margin, gap, rotate, blocked) {
+  function packPieces(pieces, W, H, margin, gap, rotate, blocked, keepOrder) {
     const G = Math.ceil(gap), occ = new Uint8Array(W * H), placed = [], rest = [], W1 = W + 1, S = new Int32Array(W1 * (H + 1));
     if (blocked) for (let y = 0; y < Math.min(H, Math.ceil(blocked.h + G)); y++) for (let x = 0; x < Math.min(W, Math.ceil(blocked.w + G)); x++) occ[y * W + x] = 1;
     const sums = () => { for (let y = 0; y < H; y++) { let row = 0; for (let x = 0; x < W; x++) { row += occ[y * W + x]; S[(y + 1) * W1 + x + 1] = S[y * W1 + x + 1] + row; } } };
     const free = (x0, y0, w, h) => S[(y0 + h) * W1 + x0 + w] - S[y0 * W1 + x0 + w] - S[(y0 + h) * W1 + x0] + S[y0 * W1 + x0] === 0;
     sums();
-    for (const p of pieces.slice().sort((a, b) => b.wmm * b.hmm - a.wmm * a.hmm)) {
+    for (const p of keepOrder ? pieces : pieces.slice().sort((a, b) => b.wmm * b.hmm - a.wmm * a.hmm)) {
       let spot = null;
       for (const rot of rotate ? [false, true] : [false]) {
         const w = Math.ceil(rot ? p.hmm : p.wmm), h = Math.ceil(rot ? p.wmm : p.hmm);
@@ -2272,15 +2272,28 @@ html.own-open{overflow:hidden}
     }
     return { placed, rest };
   }
+  const bookLayouts = new Map();
+  function kitLayoutOf(id) { if (!bookLayouts.has(id)) bookLayouts.set(id, accountAPI('book.layout&id=' + encodeURIComponent(id)).then(j => j.layout, () => { bookLayouts.delete(id); return null; })); return bookLayouts.get(id); }
   const spreadImages = new Map();
   function spreadImage(url) { if (!spreadImages.has(url)) { const im = new Image(); im.src = url; spreadImages.set(url, im.decode().then(() => im, e => { spreadImages.delete(url); throw Error('Не загрузился фон книги'); })); } return spreadImages.get(url); }
   // full: the print images (export); otherwise the light previews (screen).
   async function scissorsLayout(sheets, SW, SH, full) {
     const W = Math.round(SW), H = Math.round(SH), rotate = document.getElementById('allowRot').checked, pages = [];
     let rest = sheets.flatMap(sh => sh.items.map(it => it.p)); // at their print size (a piece shrunk for the sheet stays shrunk)
-    for (const sp of bookSpreads(chosenBook)) {
+    // Like the Canva book: under each scene go the pieces of that scene (nails under the hand, tables under the café); pieces without
+    // a scene fill what is left, so nothing is wasted.
+    const spreads = bookSpreads(chosenBook), scenes = spreads.length * 2, map = rest.some(p => p.kit) ? (await kitLayoutOf(chosenBook))?.scenes || {} : {};
+    const sceneOf = p => { if (!p.kit) return null; for (const n of [p.kitName, p.name, String(p.name || '').replace(/_\d+$/, '')]) if (n && Number.isInteger(map[n])) return map[n]; return Number.isInteger(p.scene) ? p.scene : null; };
+    const loose = () => rest.filter(p => { const s = sceneOf(p); return s === null || s >= scenes; });
+    for (const [si, sp] of spreads.entries()) {
       const im = await spreadImage(full ? sp.url : sp.preview), hw = im.naturalWidth / 2, BW = Math.min(210, W), BH = BW * im.naturalHeight / hw;
-      for (const sx of [0, hw]) { const r = packPieces(rest, W, H, 4, 3, rotate, { w: BW, h: BH + 2 }); rest = r.rest; pages.push({ bg: { im, sx, sw: hw, sh: im.naturalHeight, w: BW, h: BH }, items: r.placed }); }
+      for (const [hi, sx] of [0, hw].entries()) {
+        const scene = si * 2 + hi, byArea = (x, y) => y.wmm * y.hmm - x.wmm * x.hmm;
+        const order = [...rest.filter(p => sceneOf(p) === scene).sort(byArea), ...loose().sort(byArea)];
+        const both = packPieces(order, W, H, 4, 3, rotate, { w: BW, h: BH + 2 }, true);
+        const done = new Set(both.placed.map(x => x.p)); rest = rest.filter(p => !done.has(p));
+        pages.push({ bg: { im, sx, sw: hw, sh: im.naturalHeight, w: BW, h: BH }, items: both.placed });
+      }
     }
     while (rest.length) { const r = packPieces(rest, W, H, 6, 3, rotate); if (!r.placed.length) throw Error('Деталь «' + rest[0].name + '» больше листа — уменьши её или выбери лист побольше.'); rest = r.rest; pages.push({ bg: null, items: r.placed }); }
     return pages;
@@ -3899,6 +3912,8 @@ html.own-open{overflow:hidden}
     {id:'my-doll',title:'Моя кукла',spreads:3,text:'Комнаты куколки: туалетный столик, шкаф, игровая, спальня и ванная. Одежда — из твоего гардероба.'},
     {id:'cat-cafe',title:'Кото-кафе',spreads:4,kit:true,text:'Спальня и шкаф, ванная и кухня, маникюр и косметика, кото-кафе. Котики и предметы уже готовы к вырезанию, можно добавить свои вещи из гардероба.'}];
   let chosenBook=null,bookKitBusy=false;
+  // Book pieces were drawn for a scene about 1.41× smaller (A5); against the 21 cm scene of the print they are scaled by this until the owner sets the size.
+  const KIT_SCALE=0.71;
   const bookSpreads=id=>{const b=READY_BOOKS.find(x=>x.id===id);return b?Array.from({length:b.spreads},(_,i)=>({key:'spread'+(i+1),url:'books/'+b.id+'/spread'+(i+1)+'.jpg',preview:'books/'+b.id+'/preview-spread'+(i+1)+'.jpg'})):[];};
   // The book's own pieces as sheet pieces: small previews first (full pictures load before printing), scaled to this doll's height.
   async function loadBookKit(id,onStatus){
@@ -3907,9 +3922,10 @@ html.own-open{overflow:hidden}
     const hashes=[...new Set(j.pieces.flatMap(p=>[p.frame,p.print]).filter(isRef).map(v=>v.slice(4)))];
     let previews=new Map();try{previews=await fetchPreviews(hashes);}catch(_){}
     const picture=async v=>{if(!isRef(v))return v?dataURLBlob(v):null;const h=v.slice(4);if(previews.has(h)){const q=previews.get(h);return {lazy:true,h,blob:q.blob,w:q.w,hgt:q.h};}return fetchImage(h);};
-    const k=(Number(document.getElementById('dollMM').value)||160)/(Number(j.dollMM)||160),out=[];
+    // Book pieces belong to the scenes, not to the doll: their size is set once against the 21 cm scene (owner's layout), never by doll height.
+    const L=j.layout||{},k=Number(L.scale)||KIT_SCALE,out=[];
     for(let i=0;i<j.pieces.length;i++){const s=j.pieces[i];onStatus?.(i+1,j.pieces.length);
-      const p=await restorePieceImages({...s,frame:await picture(s.frame),print:s.printLayout?null:await picture(s.print)});p.role='item';p.kit=id;delete p.fit;
+      const p=await restorePieceImages({...s,frame:await picture(s.frame),print:s.printLayout?null:await picture(s.print)});p.role='item';p.kit=id;p.kitName=s.name;p.scene=Number.isInteger(L.scenes?.[s.name])?L.scenes[s.name]:null;delete p.fit;
       if(Math.abs(k-1)>0.001)resizeGarment(p,p.wmm*k,p.hmm*k);
       let name=p.name,n=2;while(sheetPieces.some(q=>q.name===name)||out.some(q=>q.name===name))name=p.name+'_'+n++;p.name=name;out.push(p);}
     return out;
@@ -3942,11 +3958,52 @@ html.own-open{overflow:hidden}
       const note=document.createElement('p');note.className='hint';note.textContent=book.kit?(items?'Плюс вещи из гардероба: '+items+'.':'Свои вещи можно добавить в гардеробе.'):items?'Вещи из гардероба на листах: '+items+'.':'Сначала выбери одежду в гардеробе.';
       const pick=document.createElement('button');pick.type='button';pick.className=on?'button-secondary full':'primary full';pick.textContent=on?'✓ Книга выбрана':'Выбрать эту книгу';pick.disabled=bookKitBusy||on;pick.onclick=()=>void chooseBook(book.id);
       const head=document.createElement('div');head.className='card-heading';head.append(title,meta);
-      card.append(view,thumbs,head,text,note,pick);return card;
+      card.append(view,thumbs,head,text,note,pick);
+      if(book.kit&&account?.admin){const lay=document.createElement('button');lay.type='button';lay.className='button-secondary full';lay.style.marginTop='8px';lay.textContent='Владелец: детали по сценам и размер';lay.onclick=()=>void openKitLayoutEditor(book.id);card.append(lay);}
+      return card;
     }));
     document.getElementById('bookNone').hidden=!chosenBook;
   }
   document.getElementById('bookNone').onclick=()=>void chooseBook(null);
+  // Owner only: put each of the book's own pieces under its scene (like the Canva layout) and set their size against the 21 cm scene.
+  // Pick a scene at the top, then tap the pieces that belong to it; tap again to take a piece back.
+  async function openKitLayoutEditor(id){
+    const dlg=document.createElement('dialog');dlg.style.cssText='width:min(960px,96vw);max-height:92vh;padding:16px;border:none;border-radius:16px';
+    const msg=document.createElement('p');msg.className='hint';msg.textContent='Загружаю детали…';dlg.append(msg);document.body.append(dlg);dlg.showModal();
+    const urls=[];const close=()=>{dlg.close();dlg.remove();urls.forEach(URL.revokeObjectURL);};
+    try{
+      const j=await accountAPI('book.kit&id='+encodeURIComponent(id)),L=j.layout||{},scenes={...(L.scenes||{})},spreads=bookSpreads(id),count=spreads.length*2;
+      const hashes=[...new Set(j.pieces.map(p=>p.frame).filter(v=>typeof v==='string'&&v.startsWith('img:')).map(v=>v.slice(4)))];
+      let previews=new Map();try{previews=await fetchPreviews(hashes);}catch(_){}
+      let active=0;
+      const title=document.createElement('h3');title.textContent='Детали книги по сценам';
+      const help=document.createElement('p');help.className='hint';help.textContent='Выбери сцену, затем нажимай детали, которые печатаются под ней (как в макете Canva). Повторное нажатие убирает деталь. Детали без сцены идут на общие листы.';
+      const scaleRow=document.createElement('label');scaleRow.style.cssText='display:flex;gap:8px;align-items:center;margin:8px 0';
+      const scale=document.createElement('input');scale.type='number';scale.min='0.3';scale.max='1.5';scale.step='0.01';scale.value=String(Number(L.scale)||KIT_SCALE);scale.style.width='90px';
+      scaleRow.append('Размер всех деталей относительно сцены 21 см: ×',scale);
+      const sceneBar=document.createElement('div');sceneBar.style.cssText='display:flex;gap:6px;overflow-x:auto;padding:4px 0';
+      const grid=document.createElement('div');grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px;max-height:46vh;overflow:auto;padding:4px 0';
+      const counts=()=>{const n=new Array(count).fill(0);for(const v of Object.values(scenes))if(v<count)n[v]++;return n;};
+      const drawScenes=()=>{const n=counts();sceneBar.replaceChildren(...Array.from({length:count},(_,i)=>{const b=document.createElement('button');b.type='button';
+        b.style.cssText='flex:0 0 auto;width:92px;padding:2px;border-radius:10px;border:3px solid '+(i===active?'#a31576':'transparent')+';background:#f6f0f4';
+        const im=document.createElement('div');im.style.cssText='width:84px;height:84px;border-radius:6px;background:url('+spreads[i>>1].preview+') '+(i%2?'100%':'0')+' 0/200% 100% no-repeat';
+        const t=document.createElement('div');t.style.fontSize='12px';t.textContent='Сцена '+(i+1)+' · '+n[i];b.append(im,t);b.onclick=()=>{active=i;drawScenes();drawPieces();};return b;}));};
+      const drawPieces=()=>{grid.replaceChildren(...j.pieces.map(p=>{const b=document.createElement('button');b.type='button';const s=scenes[p.name];
+        b.style.cssText='position:relative;aspect-ratio:1;padding:4px;border-radius:10px;border:3px solid '+(s===active?'#a31576':Number.isInteger(s)?'#d9c9d3':'#eee')+';background:'+(s===active?'#fbe9f4':'#fff')+';opacity:'+(Number.isInteger(s)&&s!==active?'.45':'1');
+        const h=typeof p.frame==='string'&&p.frame.startsWith('img:')?p.frame.slice(4):'';const q=previews.get(h);
+        if(q){const im=document.createElement('img');const u=URL.createObjectURL(q.blob);urls.push(u);im.src=u;im.alt=p.name;im.style.cssText='width:100%;height:100%;object-fit:contain';b.append(im);}else b.textContent=p.name;
+        if(Number.isInteger(s)){const tag=document.createElement('span');tag.textContent=String(s+1);tag.style.cssText='position:absolute;top:2px;right:4px;font:700 12px system-ui;color:#a31576';b.append(tag);}
+        b.title=p.name+' · '+Math.round(p.wmm)+'×'+Math.round(p.hmm)+' мм (до масштаба)';
+        b.onclick=()=>{if(scenes[p.name]===active)delete scenes[p.name];else scenes[p.name]=active;drawScenes();drawPieces();};return b;}));};
+      const row=document.createElement('div');row.className='row';row.style.cssText='display:flex;gap:8px;margin-top:10px';
+      const save=document.createElement('button');save.type='button';save.className='primary';save.textContent='Сохранить';
+      const cancel=document.createElement('button');cancel.type='button';cancel.className='button-secondary';cancel.textContent='Закрыть';cancel.onclick=close;
+      save.onclick=async()=>{save.disabled=true;msg.textContent='Сохраняю…';
+        try{await accountPost('book.layout.save',{id,scale:Number(scale.value),scenes});bookLayouts.delete(id);msg.textContent='Сохранено. Чтобы увидеть новую раскладку, выбери книгу заново (кнопка «Без книги», потом снова эту книгу).';}
+        catch(e){msg.textContent='Не сохранилось: '+e.message;}finally{save.disabled=false;}};
+      row.append(save,cancel);dlg.replaceChildren(title,help,scaleRow,sceneBar,grid,msg,row);msg.textContent='';drawScenes();drawPieces();
+    }catch(e){msg.textContent='Не удалось открыть: '+e.message;const c=document.createElement('button');c.type='button';c.className='button-secondary';c.textContent='Закрыть';c.onclick=close;dlg.append(c);}
+  }
   async function addBookSpreads(files){
     const book=READY_BOOKS.find(b=>b.id===chosenBook);if(!book)return;
     for(const sp of bookSpreads(book.id)){const r=await fetch(sp.url,{cache:'force-cache'});if(!r.ok)throw Error('Не удалось получить разворот книги');files.push({name:'kniga/razvorot_'+sp.key.slice(6)+'.jpg',data:await r.blob()});}
@@ -4732,7 +4789,7 @@ html.own-open{overflow:hidden}
     if(!Number.isFinite(next)||next<60||next>400){dollInput.value=dollPrev;showToast('Высота куклы — от 60 до 400 мм.');return;}
     if(!canEditBook()){dollInput.value=dollPrev;return;}
     const k=next/dollPrev;dollPrev=next;if(Math.abs(k-1)<.0001||!sheetPieces.length)return;
-    for(const p of sheetPieces){resizeGarment(p,p.wmm*k,p.hmm*k);if(p.fit){if(p.fit.baseW)p.fit.baseW*=k;if(p.fit.baseH)p.fit.baseH*=k;if(p.fit.dollMM)p.fit.dollMM=next;if(p.fit.offset)p.fit.offset={x:p.fit.offset.x*k,y:p.fit.offset.y*k};}}
+    for(const p of sheetPieces){if(p.kit)continue;resizeGarment(p,p.wmm*k,p.hmm*k);if(p.fit){if(p.fit.baseW)p.fit.baseW*=k;if(p.fit.baseH)p.fit.baseH*=k;if(p.fit.dollMM)p.fit.dollMM=next;if(p.fit.offset)p.fit.offset={x:p.fit.offset.x*k,y:p.fit.offset.y*k};}}
     saveFitChanges();showToast('Кукла и вещи пересчитаны под высоту '+next+' мм.');
    });}
 
